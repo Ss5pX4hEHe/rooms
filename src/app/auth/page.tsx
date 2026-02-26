@@ -5,32 +5,34 @@ import { supabase } from "@/lib/supabase";
 
 export default function AuthPage() {
   const router = useRouter();
-  const [step, setStep] = useState<"email" | "otp" | "username">("email");
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [step, setStep] = useState<"auth" | "username">("auth");
   const [email, setEmail] = useState("");
-  const [otp, setOtp] = useState("");
+  const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  async function sendOtp() {
+  async function handleAuth() {
+    if (!email || !password) return;
     setLoading(true); setError("");
-    const { error } = await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
-    setLoading(false);
-    if (error) setError(error.message); else setStep("otp");
-  }
-
-  async function verifyOtp() {
-    setLoading(true); setError("");
-    const { data, error } = await supabase.auth.verifyOtp({ email, token: otp, type: "email" });
-    setLoading(false);
-    if (error) { setError(error.message); return; }
-    if (data.user) {
-      const { data: p } = await supabase.from("profiles").select("username").eq("id", data.user.id).single();
-      if (!p?.username) setStep("username"); else router.replace("/chat");
+    if (mode === "register") {
+      const { data, error } = await supabase.auth.signUp({ email, password });
+      setLoading(false);
+      if (error) { setError(error.message); return; }
+      if (data.user) setStep("username");
+    } else {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      setLoading(false);
+      if (error) { setError("Неверный email или пароль"); return; }
+      if (data.user) {
+        const { data: p } = await supabase.from("profiles").select("username").eq("id", data.user.id).single();
+        if (!p?.username) setStep("username"); else router.replace("/chat");
+      }
     }
   }
 
-  async function setUser() {
+  async function handleSetUsername() {
     setLoading(true); setError("");
     const { data: ex } = await supabase.from("profiles").select("id").eq("username", username.toLowerCase()).single();
     if (ex) { setError("Username занят"); setLoading(false); return; }
@@ -52,27 +54,34 @@ export default function AuthPage() {
           <p className="text-tx2 text-sm mt-1">Private messenger</p>
         </div>
 
-        {step === "email" && (
+        {step === "auth" && (
           <div className="space-y-4">
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendOtp()} placeholder="your@email.com" className="w-full px-4 py-3 rounded-xl bg-surface border border-brd text-tx text-sm focus:border-pri transition-colors" autoFocus />
-            <button onClick={sendOtp} disabled={loading || !email} className="w-full py-3 rounded-xl bg-pri text-white font-medium text-sm hover:bg-pri-h transition-colors disabled:opacity-50">{loading ? "..." : "Получить код"}</button>
-          </div>
-        )}
-
-        {step === "otp" && (
-          <div className="space-y-4">
-            <p className="text-sm text-tx2 text-center">Код отправлен на <span className="text-tx font-medium">{email}</span></p>
-            <input type="text" value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))} onKeyDown={(e) => e.key === "Enter" && verifyOtp()} placeholder="000000" maxLength={6} className="w-full px-4 py-3 rounded-xl bg-surface border border-brd text-tx text-center tracking-[.3em] text-lg font-mono focus:border-pri transition-colors" autoFocus />
-            <button onClick={verifyOtp} disabled={loading || otp.length < 6} className="w-full py-3 rounded-xl bg-pri text-white font-medium text-sm hover:bg-pri-h transition-colors disabled:opacity-50">{loading ? "..." : "Войти"}</button>
-            <button onClick={() => { setStep("email"); setOtp(""); }} className="w-full py-2 text-sm text-tx2 hover:text-tx transition-colors">Другой email</button>
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email"
+              className="w-full px-4 py-3 rounded-xl bg-surface border border-brd text-tx text-sm focus:border-pri transition-colors" autoFocus />
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAuth()} placeholder="Пароль (минимум 6 символов)"
+              className="w-full px-4 py-3 rounded-xl bg-surface border border-brd text-tx text-sm focus:border-pri transition-colors" />
+            <button onClick={handleAuth} disabled={loading || !email || password.length < 6}
+              className="w-full py-3 rounded-xl bg-pri text-white font-medium text-sm hover:bg-pri-h transition-colors disabled:opacity-50">
+              {loading ? "..." : mode === "login" ? "Войти" : "Зарегистрироваться"}
+            </button>
+            <button onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); }}
+              className="w-full py-2 text-sm text-tx2 hover:text-tx transition-colors">
+              {mode === "login" ? "Нет аккаунта? Регистрация" : "Есть аккаунт? Войти"}
+            </button>
           </div>
         )}
 
         {step === "username" && (
           <div className="space-y-4">
-            <p className="text-sm text-tx2 text-center">Выбери username — по нему тебя найдут</p>
-            <input type="text" value={username} onChange={(e) => setUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g, ""))} onKeyDown={(e) => e.key === "Enter" && setUser()} placeholder="coolname" maxLength={20} className="w-full px-4 py-3 rounded-xl bg-surface border border-brd text-tx text-sm focus:border-pri transition-colors" autoFocus />
-            <button onClick={setUser} disabled={loading || username.length < 2} className="w-full py-3 rounded-xl bg-pri text-white font-medium text-sm hover:bg-pri-h transition-colors disabled:opacity-50">{loading ? "..." : "Продолжить"}</button>
+            <p className="text-sm text-tx2 text-center">Выбери username</p>
+            <input type="text" value={username} onChange={(e) => setUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g, ""))}
+              onKeyDown={(e) => e.key === "Enter" && handleSetUsername()} placeholder="coolname" maxLength={20}
+              className="w-full px-4 py-3 rounded-xl bg-surface border border-brd text-tx text-sm focus:border-pri transition-colors" autoFocus />
+            <button onClick={handleSetUsername} disabled={loading || username.length < 2}
+              className="w-full py-3 rounded-xl bg-pri text-white font-medium text-sm hover:bg-pri-h transition-colors disabled:opacity-50">
+              {loading ? "..." : "Продолжить"}
+            </button>
           </div>
         )}
 
