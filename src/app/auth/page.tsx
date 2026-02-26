@@ -1,22 +1,35 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 export default function AuthPage() {
   const router = useRouter();
   const [mode, setMode] = useState<"login" | "register">("login");
-  const [step, setStep] = useState<"auth" | "username">("auth");
+  const [step, setStep] = useState<"loading" | "auth" | "username">("loading");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        supabase.from("profiles").select("username").eq("id", session.user.id).single().then(({ data }) => {
+          if (data?.username) router.replace("/chat");
+          else setStep("username");
+        });
+      } else {
+        setStep("auth");
+      }
+    });
+  }, []);
+
   async function handleGoogle() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: window.location.origin + "/chat" },
+      options: { redirectTo: window.location.origin + "/auth" },
     });
     if (error) setError(error.message);
   }
@@ -50,6 +63,12 @@ export default function AuthPage() {
     setLoading(false);
     if (error) setError(error.message); else router.replace("/chat");
   }
+
+  if (step === "loading") return (
+    <div className="h-full flex items-center justify-center bg-bg">
+      <div className="animate-pulse text-tx2">Загрузка...</div>
+    </div>
+  );
 
   return (
     <div className="h-full flex items-center justify-center bg-bg px-4">
