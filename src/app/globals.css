@@ -1,0 +1,31 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap");
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg:#ffffff; --surface:#f0f2f5; --surface-h:#e4e6e9;
+  --pri:#2563eb; --pri-h:#1d4ed8;
+  --tx:#111827; --tx2:#6b7280; --brd:#e5e7eb;
+  --bub-own:#2563eb; --bub-other:#f0f2f5;
+}
+.dark {
+  --bg:#0f172a; --surface:#1e293b; --surface-h:#334155;
+  --pri:#3b82f6; --pri-h:#2563eb;
+  --tx:#f1f5f9; --tx2:#94a3b8; --brd:#334155;
+  --bub-own:#2563eb; --bub-other:#1e293b;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden}
+body{font-family:"DM Sans",-apple-system,BlinkMacSystemFont,sans-serif;background:var(--bg);color:var(--tx);-webkit-font-smoothing:antialiased}
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--brd);border-radius:3px}
+@keyframes fi{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+@keyframes su{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+@keyframes ti{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:translateY(0)}}
+.a-fi{animation:fi .15s ease-out}
+.a-su{animation:su .25s ease-out}
+.a-ti{animation:ti .2s ease-out}
+input,textarea{background:transparent;outline:none}
+input::placeholder,textarea::placeholder{color:var(--tx2)}
