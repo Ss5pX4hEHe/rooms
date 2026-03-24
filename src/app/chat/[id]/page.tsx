@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useStore, isOnline, formatLastSeen } from "@/lib/store";
 import { useMessages } from "@/hooks/useMessages";
 import { useChats } from "@/hooks/useChats";
+import { supabase } from "@/lib/supabase";
 import { MessageBubble } from "@/components/MessageBubble";
 import { MessageInput } from "@/components/MessageInput";
 import { GroupInfoPanel } from "@/components/GroupInfoPanel";
@@ -27,7 +28,6 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(true);
   const [memberCount, setMemberCount] = useState(0);
   const [onlineCount, setOnlineCount] = useState(0);
-  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
 
   const chat = chats.find((c) => c.chat_id === chatId);
   const name = chat?.chat_type === "direct" ? (chat.other_display_name || chat.other_username || "Chat") : (chat?.chat_name || "Group");
@@ -39,14 +39,24 @@ export default function ChatPage() {
   const otherOnline = chat?.other_user_id ? isOnline(onlineUsers[chat.other_user_id]) : false;
   const otherLastSeen = chat?.other_user_id ? formatLastSeen(onlineUsers[chat.other_user_id]) : "";
 
+  // Mark as read + clear unread badge
   useEffect(() => {
     setActive(chatId);
     setLoading(true);
-    // Clear unread by reloading chats after a short delay
-    const t1 = setTimeout(() => setLoading(false), 500);
-    const t2 = setTimeout(() => loadChats(), 1000);
-    return () => { setActive(null); clearTimeout(t1); clearTimeout(t2); };
-  }, [chatId, setActive]);
+    setTimeout(() => setLoading(false), 400);
+
+    if (user) {
+      // Update last_read_at immediately
+      supabase.from("chat_members").update({ last_read_at: new Date().toISOString() })
+        .eq("chat_id", chatId).eq("user_id", user.id)
+        .then(() => {
+          // Reload chats to clear the unread badge
+          loadChats();
+        });
+    }
+
+    return () => { setActive(null); };
+  }, [chatId, user?.id]);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length]);
 
@@ -78,12 +88,13 @@ export default function ChatPage() {
 
   return (
     <div className="flex flex-col h-full" translate="no">
+      {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-brd shrink-0">
         <button onClick={() => router.push("/chat")} className="md:hidden p-1 -ml-1 rounded-lg hover:bg-surface transition-colors">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
         <div className="flex-1 min-w-0 cursor-pointer" onClick={() => chat?.chat_type !== "direct" ? setShowInfo(!showInfo) : chat.other_user_id && router.push(`/profile/${chat.other_user_id}`)}>
-          <h2 className="text-base font-semibold truncate" translate="yes">{name}</h2>
+          <h2 className="text-base font-semibold truncate">{name}</h2>
           <span className={`text-xs ${typing.length > 0 ? "text-pri animate-pulse" : otherOnline ? "text-emerald-500" : "text-tx2"}`}>{statusLine}</span>
         </div>
         <div className="flex items-center gap-1">
@@ -104,6 +115,7 @@ export default function ChatPage() {
         </div>
       </div>
 
+      {/* Search */}
       {showSearch && (
         <div className="px-4 py-2 border-b border-brd a-fi">
           <input value={searchQ} onChange={(e) => setSearchQ(e.target.value)} placeholder="Search messages..."
@@ -111,6 +123,7 @@ export default function ChatPage() {
         </div>
       )}
 
+      {/* Pinned */}
       {showPinned && pinnedMessages.length > 0 && (
         <div className="px-4 py-2 border-b border-brd bg-surface/50 max-h-[200px] overflow-y-auto a-fi">
           <div className="flex items-center justify-between mb-2">
@@ -126,7 +139,8 @@ export default function ChatPage() {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto px-4 py-3" onClick={() => setActiveMenuId(null)}>
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto px-4 py-3">
         {filtered.length === 0 && <div className="flex items-center justify-center h-full text-tx2 text-sm">{searchQ ? "No matches" : "No messages yet"}</div>}
         {filtered.map((msg, i) => {
           const own = msg.sender_id === user?.id;
@@ -138,8 +152,7 @@ export default function ChatPage() {
               <MessageBubble message={msg} isOwn={own} showSender={showSender}
                 onReply={(m) => setReplyTo(m)} onEdit={(m) => setEditMsg(m)} onDelete={deleteMessage}
                 onForward={(m) => setForwardMsg(m)} onReact={toggleReaction} onPin={pinMessage}
-                onProfileTap={(uid) => router.push(`/profile/${uid}`)}
-                activeMenuId={activeMenuId} setActiveMenuId={setActiveMenuId} />
+                onProfileTap={(uid) => router.push(`/profile/${uid}`)} />
             </div>
           );
         })}
