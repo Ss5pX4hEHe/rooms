@@ -18,7 +18,7 @@ export default function ChatPage() {
   const { user, messages, chats, pinnedMessages, typingUsers, onlineUsers, setReplyTo, setEditMsg, setForwardMsg } = useStore();
   const setActive = useStore((s) => s.setActiveChatId);
   const { sendMessage, editMessage, deleteMessage, toggleReaction, pinMessage, unpinMessage, sendTyping } = useMessages(chatId);
-  const { loadOnlineStatuses, getChatMembers } = useChats();
+  const { loadOnlineStatuses, getChatMembers, loadChats } = useChats();
   const endRef = useRef<HTMLDivElement>(null);
   const [showInfo, setShowInfo] = useState(false);
   const [showPinned, setShowPinned] = useState(false);
@@ -39,8 +39,17 @@ export default function ChatPage() {
   const otherOnline = chat?.other_user_id ? isOnline(onlineUsers[chat.other_user_id]) : false;
   const otherLastSeen = chat?.other_user_id ? formatLastSeen(onlineUsers[chat.other_user_id]) : "";
 
-  useEffect(() => { setActive(chatId); setLoading(true); const t = setTimeout(() => setLoading(false), 500); return () => { setActive(null); clearTimeout(t); }; }, [chatId, setActive]);
+  useEffect(() => {
+    setActive(chatId);
+    setLoading(true);
+    // Clear unread by reloading chats after a short delay
+    const t1 = setTimeout(() => setLoading(false), 500);
+    const t2 = setTimeout(() => loadChats(), 1000);
+    return () => { setActive(null); clearTimeout(t1); clearTimeout(t2); };
+  }, [chatId, setActive]);
+
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length]);
+
   useEffect(() => {
     if (chat?.other_user_id) loadOnlineStatuses([chat.other_user_id]);
     if (chat?.chat_type === "group") {
@@ -110,7 +119,7 @@ export default function ChatPage() {
           </div>
           {pinnedMessages.map((p) => (
             <div key={p.id} className="flex items-start gap-2 py-1.5 border-b border-brd last:border-0">
-              <div className="flex-1 min-w-0"><p className="text-xs font-medium">{p.sender_name}</p><p className="text-xs text-tx2 truncate" translate="yes">{p.content}</p></div>
+              <div className="flex-1 min-w-0"><p className="text-xs font-medium">{p.sender_name}</p><p className="text-xs text-tx2 truncate">{p.content}</p></div>
               <button onClick={() => unpinMessage(p.id)} className="text-[10px] text-red-500 hover:underline shrink-0">Unpin</button>
             </div>
           ))}
