@@ -15,7 +15,7 @@ export function useChats() {
 
   async function createDirectChat(otherUserId: string) {
     const { data, error } = await supabase.rpc("get_or_create_direct_chat", { other_user_id: otherUserId });
-    if (error) { showToast("Ошибка"); return null; }
+    if (error) { showToast("Error"); return null; }
     await loadChats();
     return data as string;
   }
@@ -23,7 +23,7 @@ export function useChats() {
   async function createGroup(name: string) {
     if (!user) return null;
     const { data: chat, error } = await supabase.from("chats").insert({ type: "group", name, created_by: user.id }).select().single();
-    if (error || !chat) { showToast("Ошибка"); return null; }
+    if (error || !chat) { showToast("Error"); return null; }
     await supabase.from("chat_members").insert({ chat_id: chat.id, user_id: user.id, role: "owner" });
     await loadChats();
     return chat.id as string;
@@ -32,7 +32,7 @@ export function useChats() {
   async function createInvite(chatId: string) {
     if (!user) return null;
     const { data, error } = await supabase.from("invites").insert({ chat_id: chatId, code: nanoid(10), created_by: user.id, max_uses: 0 }).select().single();
-    if (error) { showToast("Ошибка"); return null; }
+    if (error) { showToast("Error"); return null; }
     return data;
   }
 
@@ -43,10 +43,24 @@ export function useChats() {
     return data as string;
   }
 
+  async function searchUserExact(username: string) {
+    const { data } = await supabase.from("profiles").select("id, username, display_name")
+      .eq("username", username).neq("id", user?.id || "").single();
+    return data || null;
+  }
+
   async function searchUsers(query: string) {
     const { data } = await supabase.from("profiles").select("id, username, display_name")
       .or(`username.ilike.%${query}%,display_name.ilike.%${query}%`).neq("id", user?.id || "").limit(10);
     return data || [];
+  }
+
+  async function deleteChat(chatId: string) {
+    if (!user) return;
+    // Leave the chat (removes membership)
+    await supabase.from("chat_members").delete().eq("chat_id", chatId).eq("user_id", user.id);
+    await loadChats();
+    showToast("Chat deleted");
   }
 
   async function leaveChat(chatId: string) {
@@ -69,5 +83,5 @@ export function useChats() {
     await loadChats();
   }
 
-  return { loadChats, createDirectChat, createGroup, createInvite, joinByInvite, searchUsers, leaveChat, removeMember, getChatMembers, updateChatName };
+  return { loadChats, createDirectChat, createGroup, createInvite, joinByInvite, searchUserExact, searchUsers, deleteChat, leaveChat, removeMember, getChatMembers, updateChatName };
 }

@@ -21,13 +21,13 @@ export function NewGroupDialog({ onClose }: { onClose: () => void }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div className="bg-bg border border-brd rounded-2xl w-full max-w-md a-su" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-brd">
-          <h3 className="text-base font-semibold">Новая группа</h3>
+          <h3 className="text-base font-semibold">New Group</h3>
           <button onClick={onClose} className="p-1 rounded-lg hover:bg-surface text-tx2">✕</button>
         </div>
         <div className="p-4 space-y-4">
-          <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && create()} placeholder="Название группы" maxLength={50}
+          <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && create()} placeholder="Group name" maxLength={50}
             className="w-full px-4 py-3 rounded-xl bg-surface border border-brd text-sm text-tx focus:border-pri transition-colors" autoFocus />
-          <button onClick={create} disabled={loading||!name.trim()} className="w-full py-3 rounded-xl bg-pri text-white font-medium text-sm hover:bg-pri-h transition-colors disabled:opacity-50">{loading ? "..." : "Создать"}</button>
+          <button onClick={create} disabled={loading || !name.trim()} className="w-full py-3 rounded-xl bg-pri text-white font-medium text-sm hover:bg-pri-h transition-colors disabled:opacity-50">{loading ? "..." : "Create"}</button>
         </div>
       </div>
     </div>
