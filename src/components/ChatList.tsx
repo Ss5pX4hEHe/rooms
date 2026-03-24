@@ -15,6 +15,7 @@ export function ChatList() {
   const { deleteChat, loadOnlineStatuses } = useChats();
   const [menuId, setMenuId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     const ids = chats.filter(c => c.other_user_id).map(c => c.other_user_id!);
@@ -37,9 +38,16 @@ export function ChatList() {
     </div>
   );
 
-  const directs = chats.filter(c => c.chat_type === "direct");
-  const groups = chats.filter(c => c.chat_type === "group");
-  const announcements = chats.filter(c => c.chat_type === "announcement");
+  // Filter chats by search
+  const q = search.toLowerCase().trim();
+  const filtered = q ? chats.filter(c => {
+    const name = c.chat_type === "direct" ? (c.other_display_name || c.other_username || "") : (c.chat_name || "");
+    return name.toLowerCase().includes(q) || (c.last_message_content || "").toLowerCase().includes(q);
+  }) : chats;
+
+  const directs = filtered.filter(c => c.chat_type === "direct");
+  const groups = filtered.filter(c => c.chat_type === "group");
+  const announcements = filtered.filter(c => c.chat_type === "announcement");
 
   function renderChat(c: typeof chats[0]) {
     const active = pathname === `/chat/${c.chat_id}`;
@@ -52,7 +60,7 @@ export function ChatList() {
       <div key={c.chat_id} className="relative group">
         <button onClick={() => { setMenuId(null); router.push(`/chat/${c.chat_id}`); }}
           onContextMenu={(e) => { e.preventDefault(); setMenuId(menuId === c.chat_id ? null : c.chat_id); }}
-          className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-all rounded-xl mx-1 ${active ? "bg-pri/10" : "hover:bg-surface"}`}>
+          className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-all rounded-xl mx-1 ${active ? "bg-pri/10" : "hover:bg-surface active:bg-surface-h"}`}>
           <Avatar src={null} name={ann ? "📢" : name} size={44} online={c.chat_type === "direct" ? online : undefined} />
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between">
@@ -77,10 +85,31 @@ export function ChatList() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto py-2" onClick={() => setMenuId(null)}>
-      {announcements.length > 0 && <div className="mb-1">{announcements.map(renderChat)}</div>}
-      {directs.length > 0 && <div className="mb-1"><p className="px-5 py-2 text-[11px] font-semibold text-tx2 uppercase tracking-wider">Direct Messages</p>{directs.map(renderChat)}</div>}
-      {groups.length > 0 && <div className="mb-1"><p className="px-5 py-2 text-[11px] font-semibold text-tx2 uppercase tracking-wider">Groups</p>{groups.map(renderChat)}</div>}
+    <div className="flex-1 flex flex-col overflow-hidden" onClick={() => setMenuId(null)}>
+      {/* Search bar */}
+      <div className="px-3 py-2 shrink-0">
+        <div className="relative">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-tx2">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search chats..."
+            className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-surface border border-brd text-sm text-tx placeholder:text-tx2 focus:border-pri transition-colors" />
+          {search && (
+            <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-tx2 hover:text-tx text-xs">✕</button>
+          )}
+        </div>
+      </div>
+
+      {/* Results */}
+      <div className="flex-1 overflow-y-auto py-1">
+        {q && filtered.length === 0 && (
+          <div className="text-center py-8 text-tx2 text-sm">No chats found</div>
+        )}
+        {announcements.length > 0 && <div className="mb-1">{announcements.map(renderChat)}</div>}
+        {directs.length > 0 && <div className="mb-1"><p className="px-5 py-2 text-[11px] font-semibold text-tx2 uppercase tracking-wider">Direct Messages</p>{directs.map(renderChat)}</div>}
+        {groups.length > 0 && <div className="mb-1"><p className="px-5 py-2 text-[11px] font-semibold text-tx2 uppercase tracking-wider">Groups</p>{groups.map(renderChat)}</div>}
+      </div>
     </div>
   );
 }
