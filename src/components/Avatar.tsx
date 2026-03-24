@@ -1,21 +1,23 @@
 "use client";
 
-export function Avatar({ src, name, size = 40, className = "" }: { src?: string | null; name: string; size?: number; className?: string }) {
+export function Avatar({ src, name, size = 40, online, className = "" }: { src?: string | null; name: string; size?: number; online?: boolean; className?: string }) {
   const letter = (name || "?").charAt(0).toUpperCase();
   const colors = ["bg-blue-500", "bg-emerald-500", "bg-purple-500", "bg-orange-500", "bg-pink-500", "bg-cyan-500", "bg-rose-500", "bg-indigo-500"];
   const color = colors[name.charCodeAt(0) % colors.length];
-
-  if (src) {
-    return (
-      <img src={src} alt={name} style={{ width: size, height: size }}
-        className={`rounded-full object-cover shrink-0 ${className}`} />
-    );
-  }
+  const dotSize = size < 32 ? 8 : size < 48 ? 10 : 12;
 
   return (
-    <div style={{ width: size, height: size, fontSize: size * 0.4 }}
-      className={`rounded-full flex items-center justify-center text-white font-semibold shrink-0 ${color} ${className}`}>
-      {letter}
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      {src ? (
+        <img src={src} alt={name} style={{ width: size, height: size }} className={`rounded-full object-cover ${className}`} />
+      ) : (
+        <div style={{ width: size, height: size, fontSize: size * 0.4 }}
+          className={`rounded-full flex items-center justify-center text-white font-semibold ${color} ${className}`}>{letter}</div>
+      )}
+      {online !== undefined && (
+        <div style={{ width: dotSize, height: dotSize }}
+          className={`absolute bottom-0 right-0 rounded-full border-2 border-bg ${online ? "bg-emerald-500" : "bg-gray-400"}`} />
+      )}
     </div>
   );
 }

@@ -1,14 +1,23 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { SplashScreen } from "@/components/SplashScreen";
 
 export default function Home() {
   const router = useRouter();
+  const [ready, setReady] = useState(false);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      router.replace(session ? "/chat" : "/auth");
+      setReady(true);
+      setTimeout(() => router.replace(session ? "/chat" : "/auth"), 1400);
     });
   }, [router]);
-  return <div className="h-full flex items-center justify-center bg-bg"><div className="animate-pulse text-tx2 text-lg">Rooms</div></div>;
+
+  return (
+    <SplashScreen>
+      <div className="h-full flex items-center justify-center bg-bg" />
+    </SplashScreen>
+  );
 }

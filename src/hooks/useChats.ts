@@ -5,7 +5,7 @@ import { useStore } from "@/lib/store";
 import { nanoid } from "nanoid";
 
 export function useChats() {
-  const { user, setChats, setBlockedUsers, showToast } = useStore();
+  const { user, setChats, setBlockedUsers, setOnlineUsers, showToast } = useStore();
 
   const loadChats = useCallback(async () => {
     if (!user) return;
@@ -18,6 +18,19 @@ export function useChats() {
     const { data } = await supabase.from("blocked_users").select("blocked_id").eq("blocker_id", user.id);
     setBlockedUsers((data || []).map((b: any) => b.blocked_id));
   }, [user, setBlockedUsers]);
+
+  const loadOnlineStatuses = useCallback(async (userIds: string[]) => {
+    if (userIds.length === 0) return;
+    const { data } = await supabase.from("profiles").select("id, last_seen").in("id", userIds);
+    const map: { [id: string]: string } = {};
+    (data || []).forEach((p: any) => { if (p.last_seen) map[p.id] = p.last_seen; });
+    setOnlineUsers(map);
+  }, [setOnlineUsers]);
+
+  const updateLastSeen = useCallback(async () => {
+    if (!user) return;
+    await supabase.from("profiles").update({ last_seen: new Date().toISOString() }).eq("id", user.id);
+  }, [user]);
 
   async function createDirectChat(otherUserId: string) {
     const { data, error } = await supabase.rpc("get_or_create_direct_chat", { other_user_id: otherUserId });
@@ -50,7 +63,7 @@ export function useChats() {
   }
 
   async function searchUserExact(username: string) {
-    const { data } = await supabase.from("profiles").select("id, username, display_name, avatar_url, bio")
+    const { data } = await supabase.from("profiles").select("id, username, display_name, avatar_url, bio, last_seen")
       .eq("username", username).neq("id", user?.id || "").single();
     return data || null;
   }
@@ -62,39 +75,17 @@ export function useChats() {
     showToast("Chat deleted");
   }
 
-  async function leaveChat(chatId: string) {
-    if (!user) return;
-    await supabase.from("chat_members").delete().eq("chat_id", chatId).eq("user_id", user.id);
-    await loadChats();
-  }
-
-  async function removeMember(chatId: string, userId: string) {
-    await supabase.from("chat_members").delete().eq("chat_id", chatId).eq("user_id", userId);
-  }
+  async function leaveChat(chatId: string) { if (!user) return; await supabase.from("chat_members").delete().eq("chat_id", chatId).eq("user_id", user.id); await loadChats(); }
+  async function removeMember(chatId: string, userId: string) { await supabase.from("chat_members").delete().eq("chat_id", chatId).eq("user_id", userId); }
 
   async function getChatMembers(chatId: string) {
-    const { data } = await supabase.from("chat_members").select("*, profiles:user_id(username, display_name, avatar_url)").eq("chat_id", chatId);
-    return (data || []).map((m: any) => ({ ...m, username: m.profiles?.username, display_name: m.profiles?.display_name, avatar_url: m.profiles?.avatar_url }));
+    const { data } = await supabase.from("chat_members").select("*, profiles:user_id(username, display_name, avatar_url, last_seen)").eq("chat_id", chatId);
+    return (data || []).map((m: any) => ({ ...m, username: m.profiles?.username, display_name: m.profiles?.display_name, avatar_url: m.profiles?.avatar_url, last_seen: m.profiles?.last_seen }));
   }
 
-  async function updateChatName(chatId: string, name: string) {
-    await supabase.from("chats").update({ name }).eq("id", chatId);
-    await loadChats();
-  }
-
-  async function blockUser(userId: string) {
-    if (!user) return;
-    await supabase.from("blocked_users").insert({ blocker_id: user.id, blocked_id: userId });
-    await loadBlockedUsers();
-    showToast("User blocked");
-  }
-
-  async function unblockUser(userId: string) {
-    if (!user) return;
-    await supabase.from("blocked_users").delete().eq("blocker_id", user.id).eq("blocked_id", userId);
-    await loadBlockedUsers();
-    showToast("User unblocked");
-  }
+  async function updateChatName(chatId: string, name: string) { await supabase.from("chats").update({ name }).eq("id", chatId); await loadChats(); }
+  async function blockUser(userId: string) { if (!user) return; await supabase.from("blocked_users").insert({ blocker_id: user.id, blocked_id: userId }); await loadBlockedUsers(); showToast("User blocked"); }
+  async function unblockUser(userId: string) { if (!user) return; await supabase.from("blocked_users").delete().eq("blocker_id", user.id).eq("blocked_id", userId); await loadBlockedUsers(); showToast("User unblocked"); }
 
   async function getProfile(userId: string) {
     const { data } = await supabase.from("profiles").select("*").eq("id", userId).single();
@@ -113,5 +104,5 @@ export function useChats() {
     return url;
   }
 
-  return { loadChats, loadBlockedUsers, createDirectChat, createGroup, createInvite, joinByInvite, searchUserExact, deleteChat, leaveChat, removeMember, getChatMembers, updateChatName, blockUser, unblockUser, getProfile, uploadAvatar };
+  return { loadChats, loadBlockedUsers, loadOnlineStatuses, updateLastSeen, createDirectChat, createGroup, createInvite, joinByInvite, searchUserExact, deleteChat, leaveChat, removeMember, getChatMembers, updateChatName, blockUser, unblockUser, getProfile, uploadAvatar };
 }

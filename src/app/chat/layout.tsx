@@ -8,12 +8,13 @@ import { useGlobalRealtime } from "@/hooks/useGlobalRealtime";
 import { ChatList } from "@/components/ChatList";
 import { NewChatDialog } from "@/components/NewChatDialog";
 import { NewGroupDialog } from "@/components/NewGroupDialog";
+import { ListSkeleton } from "@/components/Skeleton";
 
 export default function ChatLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { setUser, setProfile } = useStore();
-  const { loadChats } = useChats();
+  const { loadChats, loadBlockedUsers, updateLastSeen } = useChats();
   const [showNew, setShowNew] = useState(false);
   const [showGroup, setShowGroup] = useState(false);
   const [ready, setReady] = useState(false);
@@ -26,14 +27,28 @@ export default function ChatLayout({ children }: { children: React.ReactNode }) 
         if (data) { if (!data.username) { router.replace("/auth"); return; } setProfile(data); setReady(true); }
       });
     });
+
+    // Request push notification permission
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
   }, []);
 
-  useEffect(() => { if (ready) loadChats(); }, [ready, loadChats]);
+  useEffect(() => {
+    if (!ready) return;
+    loadChats();
+    loadBlockedUsers();
+    updateLastSeen();
+    // Heartbeat: update last_seen every 60s
+    const iv = setInterval(() => updateLastSeen(), 60000);
+    return () => clearInterval(iv);
+  }, [ready]);
+
   useGlobalRealtime();
 
   const inChat = pathname !== "/chat";
 
-  if (!ready) return <div className="h-full flex items-center justify-center bg-bg"><div className="animate-pulse text-tx2">Loading...</div></div>;
+  if (!ready) return <div className="h-full flex bg-bg"><div className="flex flex-col w-full md:w-[360px] md:min-w-[360px] h-full border-r border-brd"><div className="px-4 py-3 border-b border-brd"><div className="h-7 w-20 bg-surface rounded animate-pulse"></div></div><ListSkeleton /></div><div className="hidden md:flex flex-1" /></div>;
 
   return (
     <div className="h-full flex bg-bg">
@@ -54,11 +69,9 @@ export default function ChatLayout({ children }: { children: React.ReactNode }) 
         </div>
         <ChatList />
       </div>
-
       <div className={`${inChat ? "flex" : "hidden md:flex"} flex-col flex-1 h-full`}>
         {pathname === "/chat" ? <div className="hidden md:flex flex-1 items-center justify-center text-tx2">Select a chat</div> : children}
       </div>
-
       {showNew && <NewChatDialog onClose={() => setShowNew(false)} />}
       {showGroup && <NewGroupDialog onClose={() => setShowGroup(false)} />}
     </div>

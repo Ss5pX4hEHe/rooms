@@ -3,7 +3,7 @@ import "./globals.css";
 import { ThemeWrap } from "@/components/ThemeWrap";
 import { Toast } from "@/components/Toast";
 
-export const metadata: Metadata = { title: "Rooms", description: "Private messenger", manifest: "/manifest.json" };
+export const metadata: Metadata = { title: "Rooms", description: "Secure private messenger", manifest: "/manifest.json" };
 export const viewport: Viewport = { width: "device-width", initialScale: 1, maximumScale: 1, userScalable: false, themeColor: "#0f172a" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
