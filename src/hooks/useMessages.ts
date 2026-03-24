@@ -2,30 +2,81 @@
 import { useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { useStore } from "@/lib/store";
-import type { Message } from "@/lib/types";
+import type { Message, Reaction } from "@/lib/types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
+function groupReactions(raw: any[], userId: string): Reaction[] {
+  const map: { [emoji: string]: { count: number; users: string[] } } = {};
+  for (const r of raw) {
+    if (!map[r.emoji]) map[r.emoji] = { count: 0, users: [] };
+    map[r.emoji].count++;
+    map[r.emoji].users.push(r.user_id);
+  }
+  return Object.entries(map).map(([emoji, d]) => ({ emoji, count: d.count, users: d.users, hasOwn: d.users.includes(userId) }));
+}
+
 export function useMessages(chatId: string | null) {
-  const { user, setMessages, addMessage, updateLastMsg, showToast } = useStore();
+  const { user, setMessages, addMessage, updateMessage, removeMessage, updateLastMsg, setTypingUsers, setPinnedMessages, showToast } = useStore();
   const chRef = useRef<RealtimeChannel | null>(null);
+  const typingRef = useRef<NodeJS.Timeout | null>(null);
 
   const loadMessages = useCallback(async () => {
-    if (!chatId) return;
+    if (!chatId || !user) return;
     const { data } = await supabase
-      .from("messages").select("*, profiles:sender_id(username, display_name)")
+      .from("messages").select("*, profiles:sender_id(username, display_name, avatar_url)")
       .eq("chat_id", chatId).order("created_at", { ascending: true }).limit(200);
-    const msgs: Message[] = (data || []).map((m: any) => ({
-      id: m.id, chat_id: m.chat_id, sender_id: m.sender_id,
-      content: m.content, status: m.status, created_at: m.created_at,
-      sender_username: m.profiles?.username, sender_display_name: m.profiles?.display_name,
-    }));
+
+    const msgIds = (data || []).map((m: any) => m.id);
+    let reactionsMap: { [msgId: string]: any[] } = {};
+    if (msgIds.length > 0) {
+      const { data: rData } = await supabase.from("reactions").select("*").in("message_id", msgIds);
+      for (const r of (rData || [])) {
+        if (!reactionsMap[r.message_id]) reactionsMap[r.message_id] = [];
+        reactionsMap[r.message_id].push(r);
+      }
+    }
+
+    // Load reply data
+    const replyIds = (data || []).filter((m: any) => m.reply_to).map((m: any) => m.reply_to);
+    let replyMap: { [id: string]: any } = {};
+    if (replyIds.length > 0) {
+      const { data: rData } = await supabase.from("messages").select("id, content, profiles:sender_id(username, display_name)").in("id", replyIds);
+      for (const r of (rData || [])) replyMap[r.id] = r;
+    }
+
+    const msgs: Message[] = (data || []).map((m: any) => {
+      const reply = m.reply_to ? replyMap[m.reply_to] : null;
+      return {
+        id: m.id, chat_id: m.chat_id, sender_id: m.sender_id,
+        content: m.deleted ? "" : m.content, status: m.status, created_at: m.created_at,
+        sender_username: m.profiles?.username, sender_display_name: m.profiles?.display_name,
+        sender_avatar_url: m.profiles?.avatar_url,
+        reply_to: m.reply_to, reply_content: reply?.content, reply_sender: reply?.profiles?.display_name || reply?.profiles?.username,
+        edited_at: m.edited_at, forwarded_from: m.forwarded_from, deleted: m.deleted,
+        reactions: groupReactions(reactionsMap[m.id] || [], user.id),
+      };
+    });
     setMessages(msgs);
-  }, [chatId, setMessages]);
+  }, [chatId, user, setMessages]);
+
+  const loadPinned = useCallback(async () => {
+    if (!chatId) return;
+    const { data } = await supabase.from("pinned_messages").select("*, messages:message_id(content, sender_id, profiles:sender_id(display_name, username))")
+      .eq("chat_id", chatId).order("pinned_at", { ascending: false }).limit(5);
+    const pins = (data || []).map((p: any) => ({
+      id: p.id, chat_id: p.chat_id, message_id: p.message_id, pinned_by: p.pinned_by, pinned_at: p.pinned_at,
+      content: p.messages?.content, sender_name: p.messages?.profiles?.display_name || p.messages?.profiles?.username,
+    }));
+    setPinnedMessages(pins);
+  }, [chatId, setPinnedMessages]);
 
   useEffect(() => {
     if (!chatId || !user) return;
     loadMessages();
+    loadPinned();
     supabase.from("chat_members").update({ last_read_at: new Date().toISOString() }).eq("chat_id", chatId).eq("user_id", user.id).then();
+    // Update last_seen
+    supabase.from("profiles").update({ last_seen: new Date().toISOString() }).eq("id", user.id).then();
 
     const ch = supabase.channel(`chat:${chatId}`)
       .on("broadcast", { event: "message:new" }, ({ payload }) => {
@@ -33,16 +84,38 @@ export function useMessages(chatId: string | null) {
         addMessage(msg);
         updateLastMsg(chatId, msg.content, msg.sender_id, msg.created_at);
         if (msg.sender_id !== user.id) {
-          supabase.from("messages").update({ status: "delivered" }).eq("id", msg.id).then();
           supabase.from("chat_members").update({ last_read_at: new Date().toISOString() }).eq("chat_id", chatId).eq("user_id", user.id).then();
         }
       })
+      .on("broadcast", { event: "message:edit" }, ({ payload }) => {
+        updateMessage(payload.id, { content: payload.content, edited_at: payload.edited_at });
+      })
+      .on("broadcast", { event: "message:delete" }, ({ payload }) => {
+        removeMessage(payload.id);
+      })
+      .on("broadcast", { event: "reaction:update" }, () => {
+        loadMessages();
+      })
+      .on("broadcast", { event: "typing" }, ({ payload }) => {
+        if (payload.user_id !== user.id) {
+          const s = useStore.getState();
+          const current = s.typingUsers[chatId] || [];
+          if (!current.includes(payload.username)) {
+            setTypingUsers(chatId, [...current, payload.username]);
+          }
+          setTimeout(() => {
+            const s2 = useStore.getState();
+            setTypingUsers(chatId, (s2.typingUsers[chatId] || []).filter((u: string) => u !== payload.username));
+          }, 3000);
+        }
+      })
+      .on("broadcast", { event: "pin:update" }, () => { loadPinned(); })
       .subscribe();
     chRef.current = ch;
     return () => { ch.unsubscribe(); chRef.current = null; };
   }, [chatId, user?.id]);
 
-  const sendMessage = useCallback(async (content: string) => {
+  const sendMessage = useCallback(async (content: string, replyToId?: string, forwardedId?: string) => {
     if (!chatId || !user || !content.trim()) return;
     const store = useStore.getState();
     const msg: Message = {
@@ -50,15 +123,74 @@ export function useMessages(chatId: string | null) {
       content: content.trim(), status: "sent", created_at: new Date().toISOString(),
       sender_username: store.profile?.username || undefined,
       sender_display_name: store.profile?.display_name || undefined,
+      sender_avatar_url: store.profile?.avatar_url || undefined,
+      reply_to: replyToId || null, forwarded_from: forwardedId || null,
     };
+    if (replyToId) {
+      const replyMsg = store.messages.find(m => m.id === replyToId);
+      if (replyMsg) { msg.reply_content = replyMsg.content; msg.reply_sender = replyMsg.sender_display_name || replyMsg.sender_username; }
+    }
     addMessage(msg);
     updateLastMsg(chatId, msg.content, msg.sender_id, msg.created_at);
     chRef.current?.send({ type: "broadcast", event: "message:new", payload: msg });
-    const { error } = await supabase.from("messages").insert({
-      id: msg.id, chat_id: msg.chat_id, sender_id: msg.sender_id, content: msg.content, status: "sent",
-    });
-    if (error) showToast("Ошибка отправки");
+    const insert: any = { id: msg.id, chat_id: msg.chat_id, sender_id: msg.sender_id, content: msg.content, status: "sent" };
+    if (replyToId) insert.reply_to = replyToId;
+    if (forwardedId) insert.forwarded_from = forwardedId;
+    const { error } = await supabase.from("messages").insert(insert);
+    if (error) showToast("Send error");
   }, [chatId, user]);
 
-  return { loadMessages, sendMessage };
+  const editMessage = useCallback(async (msgId: string, newContent: string) => {
+    if (!chatId || !user) return;
+    const now = new Date().toISOString();
+    updateMessage(msgId, { content: newContent, edited_at: now });
+    chRef.current?.send({ type: "broadcast", event: "message:edit", payload: { id: msgId, content: newContent, edited_at: now } });
+    await supabase.from("messages").update({ content: newContent, edited_at: now }).eq("id", msgId).eq("sender_id", user.id);
+  }, [chatId, user]);
+
+  const deleteMessage = useCallback(async (msgId: string) => {
+    if (!chatId || !user) return;
+    removeMessage(msgId);
+    chRef.current?.send({ type: "broadcast", event: "message:delete", payload: { id: msgId } });
+    await supabase.from("messages").update({ deleted: true, content: "" }).eq("id", msgId).eq("sender_id", user.id);
+  }, [chatId, user]);
+
+  const toggleReaction = useCallback(async (msgId: string, emoji: string) => {
+    if (!user) return;
+    const { data: existing } = await supabase.from("reactions").select("id").eq("message_id", msgId).eq("user_id", user.id).eq("emoji", emoji).single();
+    if (existing) {
+      await supabase.from("reactions").delete().eq("id", existing.id);
+    } else {
+      await supabase.from("reactions").insert({ message_id: msgId, user_id: user.id, emoji });
+    }
+    chRef.current?.send({ type: "broadcast", event: "reaction:update", payload: {} });
+    await loadMessages();
+  }, [user, loadMessages]);
+
+  const pinMessage = useCallback(async (msgId: string) => {
+    if (!chatId || !user) return;
+    const store = useStore.getState();
+    if (store.pinnedMessages.length >= 5) { showToast("Max 5 pinned messages"); return; }
+    const exists = store.pinnedMessages.find(p => p.message_id === msgId);
+    if (exists) { showToast("Already pinned"); return; }
+    await supabase.from("pinned_messages").insert({ chat_id: chatId, message_id: msgId, pinned_by: user.id });
+    chRef.current?.send({ type: "broadcast", event: "pin:update", payload: {} });
+    await loadPinned();
+    showToast("Pinned");
+  }, [chatId, user, loadPinned]);
+
+  const unpinMessage = useCallback(async (pinId: string) => {
+    await supabase.from("pinned_messages").delete().eq("id", pinId);
+    chRef.current?.send({ type: "broadcast", event: "pin:update", payload: {} });
+    await loadPinned();
+    showToast("Unpinned");
+  }, [loadPinned]);
+
+  const sendTyping = useCallback(() => {
+    if (!chatId || !user) return;
+    const store = useStore.getState();
+    chRef.current?.send({ type: "broadcast", event: "typing", payload: { user_id: user.id, username: store.profile?.display_name || store.profile?.username || "" } });
+  }, [chatId, user]);
+
+  return { loadMessages, sendMessage, editMessage, deleteMessage, toggleReaction, pinMessage, unpinMessage, sendTyping };
 }

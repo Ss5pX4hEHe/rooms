@@ -3,6 +3,8 @@ export interface Profile {
   username: string | null;
   display_name: string | null;
   avatar_url: string | null;
+  bio: string;
+  last_seen: string;
   created_at: string;
 }
 
@@ -29,6 +31,23 @@ export interface Message {
   created_at: string;
   sender_username?: string;
   sender_display_name?: string;
+  sender_avatar_url?: string;
+  reply_to?: string | null;
+  reply_content?: string;
+  reply_sender?: string;
+  edited_at?: string | null;
+  forwarded_from?: string | null;
+  forwarded_content?: string;
+  forwarded_sender?: string;
+  deleted?: boolean;
+  reactions?: Reaction[];
+}
+
+export interface Reaction {
+  emoji: string;
+  count: number;
+  users: string[];
+  hasOwn: boolean;
 }
 
 export interface ChatMember {
@@ -38,4 +57,15 @@ export interface ChatMember {
   joined_at: string;
   username?: string;
   display_name?: string;
+  avatar_url?: string;
+}
+
+export interface PinnedMessage {
+  id: string;
+  chat_id: string;
+  message_id: string;
+  pinned_by: string;
+  pinned_at: string;
+  content?: string;
+  sender_name?: string;
 }

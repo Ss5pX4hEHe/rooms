@@ -5,13 +5,19 @@ import { useStore } from "@/lib/store";
 import { nanoid } from "nanoid";
 
 export function useChats() {
-  const { user, setChats, showToast } = useStore();
+  const { user, setChats, setBlockedUsers, showToast } = useStore();
 
   const loadChats = useCallback(async () => {
     if (!user) return;
     const { data } = await supabase.rpc("get_my_chats");
     setChats(data || []);
   }, [user, setChats]);
+
+  const loadBlockedUsers = useCallback(async () => {
+    if (!user) return;
+    const { data } = await supabase.from("blocked_users").select("blocked_id").eq("blocker_id", user.id);
+    setBlockedUsers((data || []).map((b: any) => b.blocked_id));
+  }, [user, setBlockedUsers]);
 
   async function createDirectChat(otherUserId: string) {
     const { data, error } = await supabase.rpc("get_or_create_direct_chat", { other_user_id: otherUserId });
@@ -44,20 +50,13 @@ export function useChats() {
   }
 
   async function searchUserExact(username: string) {
-    const { data } = await supabase.from("profiles").select("id, username, display_name")
+    const { data } = await supabase.from("profiles").select("id, username, display_name, avatar_url, bio")
       .eq("username", username).neq("id", user?.id || "").single();
     return data || null;
   }
 
-  async function searchUsers(query: string) {
-    const { data } = await supabase.from("profiles").select("id, username, display_name")
-      .or(`username.ilike.%${query}%,display_name.ilike.%${query}%`).neq("id", user?.id || "").limit(10);
-    return data || [];
-  }
-
   async function deleteChat(chatId: string) {
     if (!user) return;
-    // Leave the chat (removes membership)
     await supabase.from("chat_members").delete().eq("chat_id", chatId).eq("user_id", user.id);
     await loadChats();
     showToast("Chat deleted");
@@ -74,8 +73,8 @@ export function useChats() {
   }
 
   async function getChatMembers(chatId: string) {
-    const { data } = await supabase.from("chat_members").select("*, profiles:user_id(username, display_name)").eq("chat_id", chatId);
-    return (data || []).map((m: any) => ({ ...m, username: m.profiles?.username, display_name: m.profiles?.display_name }));
+    const { data } = await supabase.from("chat_members").select("*, profiles:user_id(username, display_name, avatar_url)").eq("chat_id", chatId);
+    return (data || []).map((m: any) => ({ ...m, username: m.profiles?.username, display_name: m.profiles?.display_name, avatar_url: m.profiles?.avatar_url }));
   }
 
   async function updateChatName(chatId: string, name: string) {
@@ -83,5 +82,36 @@ export function useChats() {
     await loadChats();
   }
 
-  return { loadChats, createDirectChat, createGroup, createInvite, joinByInvite, searchUserExact, searchUsers, deleteChat, leaveChat, removeMember, getChatMembers, updateChatName };
+  async function blockUser(userId: string) {
+    if (!user) return;
+    await supabase.from("blocked_users").insert({ blocker_id: user.id, blocked_id: userId });
+    await loadBlockedUsers();
+    showToast("User blocked");
+  }
+
+  async function unblockUser(userId: string) {
+    if (!user) return;
+    await supabase.from("blocked_users").delete().eq("blocker_id", user.id).eq("blocked_id", userId);
+    await loadBlockedUsers();
+    showToast("User unblocked");
+  }
+
+  async function getProfile(userId: string) {
+    const { data } = await supabase.from("profiles").select("*").eq("id", userId).single();
+    return data;
+  }
+
+  async function uploadAvatar(file: File) {
+    if (!user) return null;
+    const ext = file.name.split(".").pop();
+    const path = `${user.id}/avatar.${ext}`;
+    const { error } = await supabase.storage.from("avatars").upload(path, file, { upsert: true });
+    if (error) { showToast("Upload failed"); return null; }
+    const { data: { publicUrl } } = supabase.storage.from("avatars").getPublicUrl(path);
+    const url = publicUrl + "?t=" + Date.now();
+    await supabase.from("profiles").update({ avatar_url: url }).eq("id", user.id);
+    return url;
+  }
+
+  return { loadChats, loadBlockedUsers, createDirectChat, createGroup, createInvite, joinByInvite, searchUserExact, deleteChat, leaveChat, removeMember, getChatMembers, updateChatName, blockUser, unblockUser, getProfile, uploadAvatar };
 }

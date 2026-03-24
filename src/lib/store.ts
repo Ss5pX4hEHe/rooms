@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Profile, Chat, Message } from "./types";
+import type { Profile, Chat, Message, PinnedMessage } from "./types";
 
 interface S {
   user: { id: string; email: string } | null;
@@ -14,6 +14,20 @@ interface S {
   setActiveChatId: (id: string | null) => void;
   setMessages: (m: Message[]) => void;
   addMessage: (m: Message) => void;
+  updateMessage: (id: string, updates: Partial<Message>) => void;
+  removeMessage: (id: string) => void;
+  replyTo: Message | null;
+  setReplyTo: (m: Message | null) => void;
+  forwardMsg: Message | null;
+  setForwardMsg: (m: Message | null) => void;
+  editMsg: Message | null;
+  setEditMsg: (m: Message | null) => void;
+  pinnedMessages: PinnedMessage[];
+  setPinnedMessages: (p: PinnedMessage[]) => void;
+  typingUsers: { [chatId: string]: string[] };
+  setTypingUsers: (chatId: string, users: string[]) => void;
+  blockedUsers: string[];
+  setBlockedUsers: (ids: string[]) => void;
   theme: "light" | "dark";
   setTheme: (t: "light" | "dark") => void;
   toast: string | null;
@@ -31,11 +45,7 @@ export const useStore = create<S>((set) => ({
   updateLastMsg: (chatId, content, sender, at) =>
     set((s) => ({
       chats: s.chats
-        .map((c) =>
-          c.chat_id === chatId
-            ? { ...c, last_message_content: content, last_message_sender: sender, last_message_at: at }
-            : c
-        )
+        .map((c) => c.chat_id === chatId ? { ...c, last_message_content: content, last_message_sender: sender, last_message_at: at } : c)
         .sort((a, b) => {
           if (a.chat_type === "announcement") return -1;
           if (b.chat_type === "announcement") return 1;
@@ -47,18 +57,29 @@ export const useStore = create<S>((set) => ({
   messages: [],
   setActiveChatId: (id) => set({ activeChatId: id }),
   setMessages: (messages) => set({ messages }),
-  addMessage: (msg) =>
-    set((s) => (s.messages.find((m) => m.id === msg.id) ? s : { messages: [...s.messages, msg] })),
+  addMessage: (msg) => set((s) => (s.messages.find((m) => m.id === msg.id) ? s : { messages: [...s.messages, msg] })),
+  updateMessage: (id, updates) => set((s) => ({ messages: s.messages.map((m) => m.id === id ? { ...m, ...updates } : m) })),
+  removeMessage: (id) => set((s) => ({ messages: s.messages.map((m) => m.id === id ? { ...m, deleted: true, content: "" } : m) })),
+
+  replyTo: null,
+  setReplyTo: (m) => set({ replyTo: m, editMsg: null, forwardMsg: null }),
+  forwardMsg: null,
+  setForwardMsg: (m) => set({ forwardMsg: m, replyTo: null, editMsg: null }),
+  editMsg: null,
+  setEditMsg: (m) => set({ editMsg: m, replyTo: null, forwardMsg: null }),
+
+  pinnedMessages: [],
+  setPinnedMessages: (p) => set({ pinnedMessages: p }),
+
+  typingUsers: {},
+  setTypingUsers: (chatId, users) => set((s) => ({ typingUsers: { ...s.typingUsers, [chatId]: users } })),
+
+  blockedUsers: [],
+  setBlockedUsers: (ids) => set({ blockedUsers: ids }),
 
   theme: typeof window !== "undefined" ? ((localStorage.getItem("rooms-theme") as any) || "dark") : "dark",
-  setTheme: (t) => {
-    if (typeof window !== "undefined") localStorage.setItem("rooms-theme", t);
-    set({ theme: t });
-  },
+  setTheme: (t) => { if (typeof window !== "undefined") localStorage.setItem("rooms-theme", t); set({ theme: t }); },
 
   toast: null,
-  showToast: (msg) => {
-    set({ toast: msg });
-    setTimeout(() => set({ toast: null }), 3000);
-  },
+  showToast: (msg) => { set({ toast: msg }); setTimeout(() => set({ toast: null }), 3000); },
 }));
