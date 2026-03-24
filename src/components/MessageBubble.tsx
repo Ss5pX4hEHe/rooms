@@ -11,20 +11,24 @@ interface Props {
   onReply: (m: Message) => void; onEdit: (m: Message) => void; onDelete: (id: string) => void;
   onForward: (m: Message) => void; onReact: (msgId: string, emoji: string) => void;
   onPin: (msgId: string) => void; onProfileTap?: (userId: string) => void;
+  activeMenuId: string | null; setActiveMenuId: (id: string | null) => void;
 }
 
-export function MessageBubble({ message: m, isOwn, showSender, onReply, onEdit, onDelete, onForward, onReact, onPin, onProfileTap }: Props) {
-  const [showMenu, setShowMenu] = useState(false);
+export function MessageBubble({ message: m, isOwn, showSender, onReply, onEdit, onDelete, onForward, onReact, onPin, onProfileTap, activeMenuId, setActiveMenuId }: Props) {
   const time = format(new Date(m.created_at), "HH:mm");
   const touchStartX = useRef(0);
   const touchDelta = useRef(0);
   const bubbleRef = useRef<HTMLDivElement>(null);
+  const showMenu = activeMenuId === m.id;
 
   if (m.deleted) return (
     <div className={`flex mb-1 ${isOwn ? "justify-end" : "justify-start"}`}>
-      <div className="max-w-[75%] px-3 py-2 rounded-2xl bg-surface/50 text-tx2 italic text-xs">Message deleted</div>
+      <div className="max-w-[75%] px-3 py-2 rounded-2xl bg-surface/50 text-tx2 italic text-xs" translate="no">Message deleted</div>
     </div>
   );
+
+  function toggleMenu() { setActiveMenuId(showMenu ? null : m.id); }
+  function closeMenu() { setActiveMenuId(null); }
 
   function handleTouchStart(e: React.TouchEvent) { touchStartX.current = e.touches[0].clientX; touchDelta.current = 0; }
   function handleTouchMove(e: React.TouchEvent) {
@@ -34,7 +38,7 @@ export function MessageBubble({ message: m, isOwn, showSender, onReply, onEdit, 
   }
   function handleTouchEnd() {
     if (bubbleRef.current) bubbleRef.current.style.transform = "";
-    if (touchDelta.current > 60) onReply(m);
+    if (touchDelta.current > 60) { closeMenu(); onReply(m); }
     touchDelta.current = 0;
   }
 
@@ -42,7 +46,7 @@ export function MessageBubble({ message: m, isOwn, showSender, onReply, onEdit, 
 
   return (
     <div className={`flex mb-1 msg-appear group ${isOwn ? "justify-end" : "justify-start"}`}
-      onContextMenu={(e) => { e.preventDefault(); setShowMenu(!showMenu); }}>
+      onContextMenu={(e) => { e.preventDefault(); toggleMenu(); }}>
       <div className="relative max-w-[75%] md:max-w-[60%]" ref={bubbleRef}
         onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
 
@@ -53,7 +57,7 @@ export function MessageBubble({ message: m, isOwn, showSender, onReply, onEdit, 
           </div>
         )}
 
-        {m.forwarded_from && <p className="text-[10px] text-tx2 italic mb-0.5 ml-3">↗ Forwarded</p>}
+        {m.forwarded_from && <p className="text-[10px] text-tx2 italic mb-0.5 ml-3" translate="no">↗ Forwarded</p>}
 
         <div className={`px-3 py-2 rounded-2xl transition-transform ${isOwn ? "bg-bub-own text-white rounded-br-md" : "bg-bub-other text-tx rounded-bl-md"}`}>
           {m.reply_to && m.reply_content && (
@@ -64,7 +68,7 @@ export function MessageBubble({ message: m, isOwn, showSender, onReply, onEdit, 
           )}
           <p className="text-sm whitespace-pre-wrap break-words">{m.content}</p>
           <div className={`flex items-center justify-end gap-1 mt-0.5 ${isOwn ? "text-white/60" : "text-tx2"}`}>
-            {m.edited_at && <span className="text-[10px]">edited</span>}
+            {m.edited_at && <span className="text-[10px]" translate="no">edited</span>}
             <span className="text-[10px]">{time}</span>
             {isOwn && <span className={`text-[10px] ${checkColor}`}>{m.status === "read" ? "✓✓" : m.status === "delivered" ? "✓✓" : "✓"}</span>}
           </div>
@@ -73,7 +77,7 @@ export function MessageBubble({ message: m, isOwn, showSender, onReply, onEdit, 
         {m.reactions && m.reactions.length > 0 && (
           <div className={`flex flex-wrap gap-1 mt-0.5 ${isOwn ? "justify-end" : "justify-start"}`}>
             {m.reactions.map((r) => (
-              <button key={r.emoji} onClick={() => onReact(m.id, r.emoji)}
+              <button key={r.emoji} onClick={() => { closeMenu(); onReact(m.id, r.emoji); }}
                 className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs border transition-colors ${r.hasOwn ? "border-pri bg-pri/10" : "border-brd bg-surface hover:bg-surface-h"}`}>
                 <span>{r.emoji}</span><span className="text-tx2 text-[10px]">{r.count}</span>
               </button>
@@ -82,22 +86,22 @@ export function MessageBubble({ message: m, isOwn, showSender, onReply, onEdit, 
         )}
 
         {/* Desktop hover menu */}
-        <button onClick={() => setShowMenu(!showMenu)}
+        <button onClick={toggleMenu}
           className={`absolute top-1 ${isOwn ? "left-0 -translate-x-8" : "right-0 translate-x-8"} opacity-0 group-hover:opacity-100 p-1 rounded-lg bg-surface border border-brd text-tx2 hover:text-tx transition-all hidden md:block`}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
         </button>
 
         {showMenu && (
-          <div className={`absolute z-50 ${isOwn ? "right-0" : "left-0"} top-full mt-1 bg-surface border border-brd rounded-xl shadow-lg py-1 a-fi min-w-[160px]`} onClick={() => setShowMenu(false)}>
+          <div className={`absolute z-50 ${isOwn ? "right-0" : "left-0"} top-full mt-1 bg-surface border border-brd rounded-xl shadow-lg py-1 a-fi min-w-[160px]`} translate="no">
             <div className="flex items-center justify-center gap-1 px-2 py-2 border-b border-brd">
-              {EMOJIS.map(e => (<button key={e} onClick={() => onReact(m.id, e)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-h transition-colors text-base">{e}</button>))}
+              {EMOJIS.map(e => (<button key={e} onClick={() => { onReact(m.id, e); closeMenu(); }} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-h transition-colors text-base">{e}</button>))}
             </div>
-            <button onClick={() => onReply(m)} className="w-full px-3 py-2 text-left text-sm hover:bg-surface-h">Reply</button>
-            <button onClick={() => onForward(m)} className="w-full px-3 py-2 text-left text-sm hover:bg-surface-h">Forward</button>
-            <button onClick={() => onPin(m.id)} className="w-full px-3 py-2 text-left text-sm hover:bg-surface-h">Pin</button>
+            <button onClick={() => { onReply(m); closeMenu(); }} className="w-full px-3 py-2 text-left text-sm hover:bg-surface-h">Reply</button>
+            <button onClick={() => { onForward(m); closeMenu(); }} className="w-full px-3 py-2 text-left text-sm hover:bg-surface-h">Forward</button>
+            <button onClick={() => { onPin(m.id); closeMenu(); }} className="w-full px-3 py-2 text-left text-sm hover:bg-surface-h">Pin</button>
             {isOwn && <>
-              <button onClick={() => onEdit(m)} className="w-full px-3 py-2 text-left text-sm hover:bg-surface-h">Edit</button>
-              <button onClick={() => { if (confirm("Delete?")) onDelete(m.id); }} className="w-full px-3 py-2 text-left text-sm text-red-500 hover:bg-surface-h">Delete</button>
+              <button onClick={() => { onEdit(m); closeMenu(); }} className="w-full px-3 py-2 text-left text-sm hover:bg-surface-h">Edit</button>
+              <button onClick={() => { if (confirm("Delete?")) onDelete(m.id); closeMenu(); }} className="w-full px-3 py-2 text-left text-sm text-red-500 hover:bg-surface-h">Delete</button>
             </>}
           </div>
         )}

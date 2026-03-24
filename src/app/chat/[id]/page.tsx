@@ -9,7 +9,6 @@ import { MessageInput } from "@/components/MessageInput";
 import { GroupInfoPanel } from "@/components/GroupInfoPanel";
 import { DateDivider } from "@/components/DateDivider";
 import { ChatSkeleton } from "@/components/Skeleton";
-import { Avatar } from "@/components/Avatar";
 import { isSameDay } from "date-fns";
 
 export default function ChatPage() {
@@ -28,6 +27,7 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(true);
   const [memberCount, setMemberCount] = useState(0);
   const [onlineCount, setOnlineCount] = useState(0);
+  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
 
   const chat = chats.find((c) => c.chat_id === chatId);
   const name = chat?.chat_type === "direct" ? (chat.other_display_name || chat.other_username || "Chat") : (chat?.chat_name || "Group");
@@ -36,21 +36,11 @@ export default function ChatPage() {
   const adminId = process.env.NEXT_PUBLIC_ADMIN_ID;
   const canSend = !isAnn || user?.id === adminId;
   const typing = typingUsers[chatId] || [];
-
-  // Online status for direct chats
   const otherOnline = chat?.other_user_id ? isOnline(onlineUsers[chat.other_user_id]) : false;
   const otherLastSeen = chat?.other_user_id ? formatLastSeen(onlineUsers[chat.other_user_id]) : "";
 
-  useEffect(() => {
-    setActive(chatId);
-    setLoading(true);
-    const t = setTimeout(() => setLoading(false), 500);
-    return () => { setActive(null); clearTimeout(t); };
-  }, [chatId, setActive]);
-
+  useEffect(() => { setActive(chatId); setLoading(true); const t = setTimeout(() => setLoading(false), 500); return () => { setActive(null); clearTimeout(t); }; }, [chatId, setActive]);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length]);
-
-  // Load online statuses
   useEffect(() => {
     if (chat?.other_user_id) loadOnlineStatuses([chat.other_user_id]);
     if (chat?.chat_type === "group") {
@@ -63,16 +53,12 @@ export default function ChatPage() {
         });
       });
     }
-    const interval = setInterval(() => {
-      if (chat?.other_user_id) loadOnlineStatuses([chat.other_user_id]);
-    }, 30000);
+    const interval = setInterval(() => { if (chat?.other_user_id) loadOnlineStatuses([chat.other_user_id]); }, 30000);
     return () => clearInterval(interval);
   }, [chatId, chat?.other_user_id, chat?.chat_type]);
 
-  // Filter messages by search
   const filtered = searchQ ? messages.filter(m => m.content.toLowerCase().includes(searchQ.toLowerCase())) : messages;
 
-  // Status line
   let statusLine = "";
   if (typing.length > 0) statusLine = `${typing.join(", ")} typing...`;
   else if (chat?.chat_type === "direct") statusLine = otherLastSeen;
@@ -82,14 +68,13 @@ export default function ChatPage() {
   if (loading) return <ChatSkeleton />;
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
+    <div className="flex flex-col h-full" translate="no">
       <div className="flex items-center gap-3 px-4 py-3 border-b border-brd shrink-0">
         <button onClick={() => router.push("/chat")} className="md:hidden p-1 -ml-1 rounded-lg hover:bg-surface transition-colors">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
         <div className="flex-1 min-w-0 cursor-pointer" onClick={() => chat?.chat_type !== "direct" ? setShowInfo(!showInfo) : chat.other_user_id && router.push(`/profile/${chat.other_user_id}`)}>
-          <h2 className="text-base font-semibold truncate">{name}</h2>
+          <h2 className="text-base font-semibold truncate" translate="yes">{name}</h2>
           <span className={`text-xs ${typing.length > 0 ? "text-pri animate-pulse" : otherOnline ? "text-emerald-500" : "text-tx2"}`}>{statusLine}</span>
         </div>
         <div className="flex items-center gap-1">
@@ -110,7 +95,6 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {/* Search bar */}
       {showSearch && (
         <div className="px-4 py-2 border-b border-brd a-fi">
           <input value={searchQ} onChange={(e) => setSearchQ(e.target.value)} placeholder="Search messages..."
@@ -118,7 +102,6 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* Pinned messages */}
       {showPinned && pinnedMessages.length > 0 && (
         <div className="px-4 py-2 border-b border-brd bg-surface/50 max-h-[200px] overflow-y-auto a-fi">
           <div className="flex items-center justify-between mb-2">
@@ -127,15 +110,14 @@ export default function ChatPage() {
           </div>
           {pinnedMessages.map((p) => (
             <div key={p.id} className="flex items-start gap-2 py-1.5 border-b border-brd last:border-0">
-              <div className="flex-1 min-w-0"><p className="text-xs font-medium">{p.sender_name}</p><p className="text-xs text-tx2 truncate">{p.content}</p></div>
+              <div className="flex-1 min-w-0"><p className="text-xs font-medium">{p.sender_name}</p><p className="text-xs text-tx2 truncate" translate="yes">{p.content}</p></div>
               <button onClick={() => unpinMessage(p.id)} className="text-[10px] text-red-500 hover:underline shrink-0">Unpin</button>
             </div>
           ))}
         </div>
       )}
 
-      {/* Messages with date dividers */}
-      <div className="flex-1 overflow-y-auto px-4 py-3">
+      <div className="flex-1 overflow-y-auto px-4 py-3" onClick={() => setActiveMenuId(null)}>
         {filtered.length === 0 && <div className="flex items-center justify-center h-full text-tx2 text-sm">{searchQ ? "No matches" : "No messages yet"}</div>}
         {filtered.map((msg, i) => {
           const own = msg.sender_id === user?.id;
@@ -147,7 +129,8 @@ export default function ChatPage() {
               <MessageBubble message={msg} isOwn={own} showSender={showSender}
                 onReply={(m) => setReplyTo(m)} onEdit={(m) => setEditMsg(m)} onDelete={deleteMessage}
                 onForward={(m) => setForwardMsg(m)} onReact={toggleReaction} onPin={pinMessage}
-                onProfileTap={(uid) => router.push(`/profile/${uid}`)} />
+                onProfileTap={(uid) => router.push(`/profile/${uid}`)}
+                activeMenuId={activeMenuId} setActiveMenuId={setActiveMenuId} />
             </div>
           );
         })}

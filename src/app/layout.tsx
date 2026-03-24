@@ -8,8 +8,9 @@ export const viewport: Viewport = { width: "device-width", initialScale: 1, maxi
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className="h-full">
+    <html lang="en" translate="no" suppressHydrationWarning>
+      <head><meta name="google" content="notranslate" /></head>
+      <body className="h-full notranslate">
         <ThemeWrap>
           <div className="h-full bg-bg text-tx">{children}</div>
           <Toast />
