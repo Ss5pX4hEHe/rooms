@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useStore, isOnline, formatLastSeen } from "@/lib/store";
 import { useMessages } from "@/hooks/useMessages";
 import { useChats } from "@/hooks/useChats";
+import { supabase } from "@/lib/supabase";
 import { MessageBubble } from "@/components/MessageBubble";
 import { MessageInput } from "@/components/MessageInput";
 import { GroupInfoPanel } from "@/components/GroupInfoPanel";
@@ -15,7 +16,8 @@ export default function ChatPage() {
   const { id } = useParams();
   const router = useRouter();
   const chatId = id as string;
-  const { user, messages, chats, pinnedMessages, typingUsers, onlineUsers, setReplyTo, setEditMsg, setForwardMsg, clearUnread } = useStore();
+  const { user, messages, chats, pinnedMessages, typingUsers, onlineUsers, setReplyTo, setEditMsg, setForwardMsg } = useStore();
+  const clearUnread = useStore((s) => s.clearUnread);
   const setActive = useStore((s) => s.setActiveChatId);
   const { sendMessage, editMessage, deleteMessage, toggleReaction, pinMessage, unpinMessage, sendTyping } = useMessages(chatId);
   const { loadOnlineStatuses, getChatMembers, loadChats } = useChats();
@@ -38,16 +40,45 @@ export default function ChatPage() {
   const otherOnline = chat?.other_user_id ? isOnline(onlineUsers[chat.other_user_id]) : false;
   const otherLastSeen = chat?.other_user_id ? formatLastSeen(onlineUsers[chat.other_user_id]) : "";
 
+  // UNREAD FIX: clear badge immediately, update DB, then reload after DB is updated
   useEffect(() => {
     setActive(chatId);
     setLoading(true);
     setTimeout(() => setLoading(false), 400);
-    // Clear badge immediately
+
+    // Step 1: instantly clear badge in UI
     clearUnread(chatId);
-    // Also reload chats from server after a delay
-    setTimeout(() => loadChats(), 1500);
+
+    if (user) {
+      // Step 2: update DB (await), then reload chats so server data also has 0
+      (async () => {
+        await supabase.from("chat_members")
+          .update({ last_read_at: new Date().toISOString() })
+          .eq("chat_id", chatId)
+          .eq("user_id", user.id);
+        // Step 3: now reload - server will return 0 unread because last_read_at is fresh
+        await loadChats();
+        // Step 4: clear again just in case of race condition
+        clearUnread(chatId);
+      })();
+    }
+
     return () => { setActive(null); };
-  }, [chatId]);
+  }, [chatId, user?.id]);
+
+  // When new messages arrive while in chat, keep badge at 0
+  useEffect(() => {
+    if (!user || messages.length === 0) return;
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg.sender_id !== user.id) {
+      clearUnread(chatId);
+      supabase.from("chat_members")
+        .update({ last_read_at: new Date().toISOString() })
+        .eq("chat_id", chatId)
+        .eq("user_id", user.id)
+        .then();
+    }
+  }, [messages.length]);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length]);
 
