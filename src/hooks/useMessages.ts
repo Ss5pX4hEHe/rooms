@@ -18,7 +18,6 @@ function groupReactions(raw: any[], userId: string): Reaction[] {
 export function useMessages(chatId: string | null) {
   const { user, setMessages, addMessage, updateMessage, removeMessage, updateLastMsg, setTypingUsers, setPinnedMessages, showToast } = useStore();
   const chRef = useRef<RealtimeChannel | null>(null);
-  const typingRef = useRef<NodeJS.Timeout | null>(null);
 
   const loadMessages = useCallback(async () => {
     if (!chatId || !user) return;
@@ -36,7 +35,6 @@ export function useMessages(chatId: string | null) {
       }
     }
 
-    // Load reply data
     const replyIds = (data || []).filter((m: any) => m.reply_to).map((m: any) => m.reply_to);
     let replyMap: { [id: string]: any } = {};
     if (replyIds.length > 0) {
@@ -70,13 +68,45 @@ export function useMessages(chatId: string | null) {
     setPinnedMessages(pins);
   }, [chatId, setPinnedMessages]);
 
+  // Mark all unread messages from others as "read"
+  const markAsRead = useCallback(async () => {
+    if (!chatId || !user) return;
+    // Update messages in DB: set status to "read" for messages sent by others that aren't read yet
+    const { data: updated } = await supabase
+      .from("messages")
+      .update({ status: "read" })
+      .eq("chat_id", chatId)
+      .neq("sender_id", user.id)
+      .neq("status", "read")
+      .select("id");
+
+    if (updated && updated.length > 0) {
+      // Update local store
+      const ids = updated.map((m: any) => m.id);
+      const store = useStore.getState();
+      const newMessages = store.messages.map(m => ids.includes(m.id) ? { ...m, status: "read" as const } : m);
+      setMessages(newMessages);
+
+      // Broadcast read event so sender sees blue checkmarks
+      chRef.current?.send({
+        type: "broadcast",
+        event: "message:read",
+        payload: { reader_id: user.id, message_ids: ids },
+      });
+    }
+  }, [chatId, user, setMessages]);
+
   useEffect(() => {
     if (!chatId || !user) return;
     loadMessages();
     loadPinned();
+
+    // Mark as read when entering chat
     supabase.from("chat_members").update({ last_read_at: new Date().toISOString() }).eq("chat_id", chatId).eq("user_id", user.id).then();
-    // Update last_seen
     supabase.from("profiles").update({ last_seen: new Date().toISOString() }).eq("id", user.id).then();
+
+    // Mark messages as read after loading
+    setTimeout(() => markAsRead(), 500);
 
     const ch = supabase.channel(`chat:${chatId}`)
       .on("broadcast", { event: "message:new" }, ({ payload }) => {
@@ -85,6 +115,12 @@ export function useMessages(chatId: string | null) {
         updateLastMsg(chatId, msg.content, msg.sender_id, msg.created_at);
         if (msg.sender_id !== user.id) {
           supabase.from("chat_members").update({ last_read_at: new Date().toISOString() }).eq("chat_id", chatId).eq("user_id", user.id).then();
+          // Mark new incoming message as read immediately (we're in the chat)
+          supabase.from("messages").update({ status: "read" }).eq("id", msg.id).then();
+          // Broadcast read back to sender
+          setTimeout(() => {
+            ch.send({ type: "broadcast", event: "message:read", payload: { reader_id: user.id, message_ids: [msg.id] } });
+          }, 300);
         }
       })
       .on("broadcast", { event: "message:edit" }, ({ payload }) => {
@@ -93,9 +129,17 @@ export function useMessages(chatId: string | null) {
       .on("broadcast", { event: "message:delete" }, ({ payload }) => {
         removeMessage(payload.id);
       })
-      .on("broadcast", { event: "reaction:update" }, () => {
-        loadMessages();
+      .on("broadcast", { event: "message:read" }, ({ payload }) => {
+        // Someone read our messages — update checkmarks to blue
+        if (payload.reader_id !== user.id && payload.message_ids) {
+          const store = useStore.getState();
+          const newMsgs = store.messages.map(m =>
+            payload.message_ids.includes(m.id) ? { ...m, status: "read" as const } : m
+          );
+          setMessages(newMsgs);
+        }
       })
+      .on("broadcast", { event: "reaction:update" }, () => { loadMessages(); })
       .on("broadcast", { event: "typing" }, ({ payload }) => {
         if (payload.user_id !== user.id) {
           const s = useStore.getState();
@@ -158,11 +202,8 @@ export function useMessages(chatId: string | null) {
   const toggleReaction = useCallback(async (msgId: string, emoji: string) => {
     if (!user) return;
     const { data: existing } = await supabase.from("reactions").select("id").eq("message_id", msgId).eq("user_id", user.id).eq("emoji", emoji).single();
-    if (existing) {
-      await supabase.from("reactions").delete().eq("id", existing.id);
-    } else {
-      await supabase.from("reactions").insert({ message_id: msgId, user_id: user.id, emoji });
-    }
+    if (existing) await supabase.from("reactions").delete().eq("id", existing.id);
+    else await supabase.from("reactions").insert({ message_id: msgId, user_id: user.id, emoji });
     chRef.current?.send({ type: "broadcast", event: "reaction:update", payload: {} });
     await loadMessages();
   }, [user, loadMessages]);
@@ -171,8 +212,7 @@ export function useMessages(chatId: string | null) {
     if (!chatId || !user) return;
     const store = useStore.getState();
     if (store.pinnedMessages.length >= 5) { showToast("Max 5 pinned messages"); return; }
-    const exists = store.pinnedMessages.find(p => p.message_id === msgId);
-    if (exists) { showToast("Already pinned"); return; }
+    if (store.pinnedMessages.find(p => p.message_id === msgId)) { showToast("Already pinned"); return; }
     await supabase.from("pinned_messages").insert({ chat_id: chatId, message_id: msgId, pinned_by: user.id });
     chRef.current?.send({ type: "broadcast", event: "pin:update", payload: {} });
     await loadPinned();
@@ -192,5 +232,5 @@ export function useMessages(chatId: string | null) {
     chRef.current?.send({ type: "broadcast", event: "typing", payload: { user_id: user.id, username: store.profile?.display_name || store.profile?.username || "" } });
   }, [chatId, user]);
 
-  return { loadMessages, sendMessage, editMessage, deleteMessage, toggleReaction, pinMessage, unpinMessage, sendTyping };
+  return { loadMessages, sendMessage, editMessage, deleteMessage, toggleReaction, pinMessage, unpinMessage, sendTyping, markAsRead };
 }

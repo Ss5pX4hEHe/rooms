@@ -18,7 +18,7 @@ export default function ChatPage() {
   const chatId = id as string;
   const { user, messages, chats, pinnedMessages, typingUsers, onlineUsers, setReplyTo, setEditMsg, setForwardMsg, setChats } = useStore();
   const setActive = useStore((s) => s.setActiveChatId);
-  const { sendMessage, editMessage, deleteMessage, toggleReaction, pinMessage, unpinMessage, sendTyping } = useMessages(chatId);
+  const { sendMessage, editMessage, deleteMessage, toggleReaction, pinMessage, unpinMessage, sendTyping, markAsRead } = useMessages(chatId);
   const { loadOnlineStatuses, getChatMembers, loadChats } = useChats();
   const endRef = useRef<HTMLDivElement>(null);
   const [showInfo, setShowInfo] = useState(false);
@@ -39,42 +39,31 @@ export default function ChatPage() {
   const otherOnline = chat?.other_user_id ? isOnline(onlineUsers[chat.other_user_id]) : false;
   const otherLastSeen = chat?.other_user_id ? formatLastSeen(onlineUsers[chat.other_user_id]) : "";
 
-  // Mark as read: immediately zero badge + update DB + reload list
   useEffect(() => {
     setActive(chatId);
     setLoading(true);
     setTimeout(() => setLoading(false), 400);
 
     if (user) {
-      // 1. Immediately zero out unread count in store (instant visual feedback)
+      // Immediately zero badge
       setChats(chats.map(c => c.chat_id === chatId ? { ...c, unread_count: 0 } : c));
-
-      // 2. Update last_read_at in database
-      supabase.from("chat_members")
-        .update({ last_read_at: new Date().toISOString() })
-        .eq("chat_id", chatId)
-        .eq("user_id", user.id)
-        .then(() => {
-          // 3. Reload from server to get accurate counts
-          loadChats();
-        });
+      // Update DB
+      supabase.from("chat_members").update({ last_read_at: new Date().toISOString() })
+        .eq("chat_id", chatId).eq("user_id", user.id).then(() => loadChats());
     }
-
     return () => { setActive(null); };
   }, [chatId, user?.id]);
 
-  // Also mark as read when new messages arrive while chat is open
+  // Mark messages as read when new ones arrive
   useEffect(() => {
     if (user && messages.length > 0) {
-      const lastMsg = messages[messages.length - 1];
-      if (lastMsg.sender_id !== user.id) {
-        supabase.from("chat_members")
-          .update({ last_read_at: new Date().toISOString() })
-          .eq("chat_id", chatId)
-          .eq("user_id", user.id)
-          .then();
-        // Zero out badge
+      const unreadFromOthers = messages.filter(m => m.sender_id !== user.id && m.status !== "read");
+      if (unreadFromOthers.length > 0) {
+        markAsRead();
+        // Also zero badge
         setChats(useStore.getState().chats.map(c => c.chat_id === chatId ? { ...c, unread_count: 0 } : c));
+        supabase.from("chat_members").update({ last_read_at: new Date().toISOString() })
+          .eq("chat_id", chatId).eq("user_id", user.id).then();
       }
     }
   }, [messages.length]);
@@ -109,7 +98,6 @@ export default function ChatPage() {
 
   return (
     <div className="flex flex-col h-full" translate="no">
-      {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-brd shrink-0">
         <button onClick={() => router.push("/chat")} className="md:hidden p-1 -ml-1 rounded-lg hover:bg-surface transition-colors">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
@@ -158,7 +146,6 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-3">
         {filtered.length === 0 && <div className="flex items-center justify-center h-full text-tx2 text-sm">{searchQ ? "No matches" : "No messages yet"}</div>}
         {filtered.map((msg, i) => {
