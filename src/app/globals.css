@@ -27,17 +27,21 @@ body{font-family:"DM Sans",-apple-system,BlinkMacSystemFont,sans-serif;backgroun
 @keyframes ti{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:translateY(0)}}
 @keyframes msgIn{from{opacity:0;transform:translateY(8px) scale(0.97)}to{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes splashIn{0%{opacity:0;transform:scale(0.85)}50%{opacity:1;transform:scale(1.02)}100%{opacity:1;transform:scale(1)}}
+@keyframes toastSlide{
+  0%{opacity:0;transform:translateX(-50%) translateY(-20px) scale(0.95)}
+  100%{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}
+}
 
 .a-fi{animation:fi .15s ease-out}
 .a-su{animation:su .25s ease-out}
 .a-ti{animation:ti .2s ease-out}
 .msg-appear{animation:msgIn .2s ease-out}
 .splash-in{animation:splashIn .6s ease-out}
+.toast-slide-in{animation:toastSlide .3s ease-out}
 
 input,textarea{background:transparent;outline:none}
 input::placeholder,textarea::placeholder{color:var(--tx2)}
 
-/* Touch feedback for mobile */
 @media (hover: none) {
   button:active { transform: scale(0.97); }
 }
