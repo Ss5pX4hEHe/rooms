@@ -4,7 +4,6 @@ import { useParams, useRouter } from "next/navigation";
 import { useStore, isOnline, formatLastSeen } from "@/lib/store";
 import { useMessages } from "@/hooks/useMessages";
 import { useChats } from "@/hooks/useChats";
-import { supabase } from "@/lib/supabase";
 import { MessageBubble } from "@/components/MessageBubble";
 import { MessageInput } from "@/components/MessageInput";
 import { GroupInfoPanel } from "@/components/GroupInfoPanel";
@@ -16,9 +15,9 @@ export default function ChatPage() {
   const { id } = useParams();
   const router = useRouter();
   const chatId = id as string;
-  const { user, messages, chats, pinnedMessages, typingUsers, onlineUsers, setReplyTo, setEditMsg, setForwardMsg, setChats } = useStore();
+  const { user, messages, chats, pinnedMessages, typingUsers, onlineUsers, setReplyTo, setEditMsg, setForwardMsg, clearUnread } = useStore();
   const setActive = useStore((s) => s.setActiveChatId);
-  const { sendMessage, editMessage, deleteMessage, toggleReaction, pinMessage, unpinMessage, sendTyping, markAsRead } = useMessages(chatId);
+  const { sendMessage, editMessage, deleteMessage, toggleReaction, pinMessage, unpinMessage, sendTyping } = useMessages(chatId);
   const { loadOnlineStatuses, getChatMembers, loadChats } = useChats();
   const endRef = useRef<HTMLDivElement>(null);
   const [showInfo, setShowInfo] = useState(false);
@@ -43,30 +42,12 @@ export default function ChatPage() {
     setActive(chatId);
     setLoading(true);
     setTimeout(() => setLoading(false), 400);
-
-    if (user) {
-      // Immediately zero badge
-      setChats(chats.map(c => c.chat_id === chatId ? { ...c, unread_count: 0 } : c));
-      // Update DB
-      supabase.from("chat_members").update({ last_read_at: new Date().toISOString() })
-        .eq("chat_id", chatId).eq("user_id", user.id).then(() => loadChats());
-    }
+    // Clear badge immediately
+    clearUnread(chatId);
+    // Also reload chats from server after a delay
+    setTimeout(() => loadChats(), 1500);
     return () => { setActive(null); };
-  }, [chatId, user?.id]);
-
-  // Mark messages as read when new ones arrive
-  useEffect(() => {
-    if (user && messages.length > 0) {
-      const unreadFromOthers = messages.filter(m => m.sender_id !== user.id && m.status !== "read");
-      if (unreadFromOthers.length > 0) {
-        markAsRead();
-        // Also zero badge
-        setChats(useStore.getState().chats.map(c => c.chat_id === chatId ? { ...c, unread_count: 0 } : c));
-        supabase.from("chat_members").update({ last_read_at: new Date().toISOString() })
-          .eq("chat_id", chatId).eq("user_id", user.id).then();
-      }
-    }
-  }, [messages.length]);
+  }, [chatId]);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length]);
 
@@ -123,20 +104,14 @@ export default function ChatPage() {
           )}
         </div>
       </div>
-
       {showSearch && (
         <div className="px-4 py-2 border-b border-brd a-fi">
-          <input value={searchQ} onChange={(e) => setSearchQ(e.target.value)} placeholder="Search messages..."
-            className="w-full px-3 py-2 rounded-xl bg-surface border border-brd text-sm text-tx focus:border-pri transition-colors" autoFocus />
+          <input value={searchQ} onChange={(e) => setSearchQ(e.target.value)} placeholder="Search messages..." className="w-full px-3 py-2 rounded-xl bg-surface border border-brd text-sm text-tx focus:border-pri transition-colors" autoFocus />
         </div>
       )}
-
       {showPinned && pinnedMessages.length > 0 && (
         <div className="px-4 py-2 border-b border-brd bg-surface/50 max-h-[200px] overflow-y-auto a-fi">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-xs font-semibold text-tx2">📌 Pinned ({pinnedMessages.length}/5)</p>
-            <button onClick={() => setShowPinned(false)} className="text-xs text-tx2 hover:text-tx">Hide</button>
-          </div>
+          <div className="flex items-center justify-between mb-2"><p className="text-xs font-semibold text-tx2">📌 Pinned ({pinnedMessages.length}/5)</p><button onClick={() => setShowPinned(false)} className="text-xs text-tx2 hover:text-tx">Hide</button></div>
           {pinnedMessages.map((p) => (
             <div key={p.id} className="flex items-start gap-2 py-1.5 border-b border-brd last:border-0">
               <div className="flex-1 min-w-0"><p className="text-xs font-medium">{p.sender_name}</p><p className="text-xs text-tx2 truncate">{p.content}</p></div>
@@ -145,7 +120,6 @@ export default function ChatPage() {
           ))}
         </div>
       )}
-
       <div className="flex-1 overflow-y-auto px-4 py-3">
         {filtered.length === 0 && <div className="flex items-center justify-center h-full text-tx2 text-sm">{searchQ ? "No matches" : "No messages yet"}</div>}
         {filtered.map((msg, i) => {
@@ -164,7 +138,6 @@ export default function ChatPage() {
         })}
         <div ref={endRef} />
       </div>
-
       {canSend ? <MessageInput onSend={sendMessage} onEdit={editMessage} onSendTyping={sendTyping} /> : <div className="px-4 py-3 text-center text-sm text-tx2 border-t border-brd">Only admin can post here</div>}
       {showInfo && chat?.chat_type !== "direct" && <GroupInfoPanel chatId={chatId} isOwner={isOwner} onClose={() => setShowInfo(false)} />}
     </div>

@@ -8,6 +8,7 @@ interface S {
   setProfile: (p: Profile | null) => void;
   chats: Chat[];
   setChats: (c: Chat[]) => void;
+  clearUnread: (chatId: string) => void;
   updateLastMsg: (chatId: string, content: string, sender: string, at: string) => void;
   activeChatId: string | null;
   messages: Message[];
@@ -16,6 +17,7 @@ interface S {
   addMessage: (m: Message) => void;
   updateMessage: (id: string, updates: Partial<Message>) => void;
   removeMessage: (id: string) => void;
+  markMessagesRead: (ids: string[]) => void;
   replyTo: Message | null;
   setReplyTo: (m: Message | null) => void;
   forwardMsg: Message | null;
@@ -39,11 +41,12 @@ interface S {
   setSplashDone: (v: boolean) => void;
 }
 
-export const useStore = create<S>((set) => ({
+export const useStore = create<S>((set, get) => ({
   user: null, profile: null,
   setUser: (user) => set({ user }),
   setProfile: (profile) => set({ profile }),
   chats: [], setChats: (chats) => set({ chats }),
+  clearUnread: (chatId) => set((s) => ({ chats: s.chats.map(c => c.chat_id === chatId ? { ...c, unread_count: 0 } : c) })),
   updateLastMsg: (chatId, content, sender, at) =>
     set((s) => ({
       chats: s.chats.map((c) => c.chat_id === chatId ? { ...c, last_message_content: content, last_message_sender: sender, last_message_at: at } : c)
@@ -55,6 +58,7 @@ export const useStore = create<S>((set) => ({
   addMessage: (msg) => set((s) => (s.messages.find((m) => m.id === msg.id) ? s : { messages: [...s.messages, msg] })),
   updateMessage: (id, updates) => set((s) => ({ messages: s.messages.map((m) => m.id === id ? { ...m, ...updates } : m) })),
   removeMessage: (id) => set((s) => ({ messages: s.messages.map((m) => m.id === id ? { ...m, deleted: true, content: "" } : m) })),
+  markMessagesRead: (ids) => set((s) => ({ messages: s.messages.map((m) => ids.includes(m.id) ? { ...m, status: "read" } : m) })),
   replyTo: null, setReplyTo: (m) => set({ replyTo: m, editMsg: null, forwardMsg: null }),
   forwardMsg: null, setForwardMsg: (m) => set({ forwardMsg: m, replyTo: null, editMsg: null }),
   editMsg: null, setEditMsg: (m) => set({ editMsg: m, replyTo: null, forwardMsg: null }),
