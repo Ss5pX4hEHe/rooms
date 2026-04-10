@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef } from "react";
+import { useState } from "react";
 import type { Message } from "@/lib/types";
 import { format } from "date-fns";
 import { Avatar } from "./Avatar";
@@ -23,16 +23,6 @@ export function MessageBubble({ message: m, isOwn, showSender, onReply, onEdit, 
     </div>
   );
 
-  // Checkmarks: ✓ = sent, ✓✓ (blue) = read
-  let checkmark = null;
-  if (isOwn) {
-    if (m.status === "read") {
-      checkmark = <span className="text-[10px] text-blue-400 ml-1">✓✓</span>;
-    } else {
-      checkmark = <span className="text-[10px] text-white/50 ml-1">✓</span>;
-    }
-  }
-
   return (
     <div className={`flex mb-1 msg-appear group ${isOwn ? "justify-end" : "justify-start"}`}>
       <div className="relative max-w-[75%] md:max-w-[60%]">
@@ -55,10 +45,9 @@ export function MessageBubble({ message: m, isOwn, showSender, onReply, onEdit, 
             </div>
           )}
           <p className="text-sm whitespace-pre-wrap break-words">{m.content}</p>
-          <div className={`flex items-center justify-end gap-0.5 mt-0.5 ${isOwn ? "text-white/50" : "text-tx2"}`}>
-            {m.edited_at && <span className="text-[10px] mr-1">edited</span>}
+          <div className={`flex items-center justify-end gap-1 mt-0.5 ${isOwn ? "text-white/50" : "text-tx2"}`}>
+            {m.edited_at && <span className="text-[10px]">edited</span>}
             <span className="text-[10px]">{time}</span>
-            {checkmark}
           </div>
         </div>
 
@@ -73,7 +62,6 @@ export function MessageBubble({ message: m, isOwn, showSender, onReply, onEdit, 
           </div>
         )}
 
-        {/* Desktop hover button */}
         <button onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
           className={`absolute top-1 ${isOwn ? "left-0 -translate-x-9" : "right-0 translate-x-9"} opacity-0 group-hover:opacity-100 p-1.5 rounded-lg bg-surface border border-brd text-tx2 hover:text-tx transition-all hidden md:block`}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
