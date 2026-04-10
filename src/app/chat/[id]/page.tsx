@@ -16,7 +16,7 @@ export default function ChatPage() {
   const { id } = useParams();
   const router = useRouter();
   const chatId = id as string;
-  const { user, messages, chats, pinnedMessages, typingUsers, onlineUsers, setReplyTo, setEditMsg, setForwardMsg } = useStore();
+  const { user, messages, chats, pinnedMessages, typingUsers, onlineUsers, setReplyTo, setEditMsg, setForwardMsg, setChats } = useStore();
   const setActive = useStore((s) => s.setActiveChatId);
   const { sendMessage, editMessage, deleteMessage, toggleReaction, pinMessage, unpinMessage, sendTyping } = useMessages(chatId);
   const { loadOnlineStatuses, getChatMembers, loadChats } = useChats();
@@ -39,24 +39,45 @@ export default function ChatPage() {
   const otherOnline = chat?.other_user_id ? isOnline(onlineUsers[chat.other_user_id]) : false;
   const otherLastSeen = chat?.other_user_id ? formatLastSeen(onlineUsers[chat.other_user_id]) : "";
 
-  // Mark as read + clear unread badge
+  // Mark as read: immediately zero badge + update DB + reload list
   useEffect(() => {
     setActive(chatId);
     setLoading(true);
     setTimeout(() => setLoading(false), 400);
 
     if (user) {
-      // Update last_read_at immediately
-      supabase.from("chat_members").update({ last_read_at: new Date().toISOString() })
-        .eq("chat_id", chatId).eq("user_id", user.id)
+      // 1. Immediately zero out unread count in store (instant visual feedback)
+      setChats(chats.map(c => c.chat_id === chatId ? { ...c, unread_count: 0 } : c));
+
+      // 2. Update last_read_at in database
+      supabase.from("chat_members")
+        .update({ last_read_at: new Date().toISOString() })
+        .eq("chat_id", chatId)
+        .eq("user_id", user.id)
         .then(() => {
-          // Reload chats to clear the unread badge
+          // 3. Reload from server to get accurate counts
           loadChats();
         });
     }
 
     return () => { setActive(null); };
   }, [chatId, user?.id]);
+
+  // Also mark as read when new messages arrive while chat is open
+  useEffect(() => {
+    if (user && messages.length > 0) {
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg.sender_id !== user.id) {
+        supabase.from("chat_members")
+          .update({ last_read_at: new Date().toISOString() })
+          .eq("chat_id", chatId)
+          .eq("user_id", user.id)
+          .then();
+        // Zero out badge
+        setChats(useStore.getState().chats.map(c => c.chat_id === chatId ? { ...c, unread_count: 0 } : c));
+      }
+    }
+  }, [messages.length]);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length]);
 
@@ -115,7 +136,6 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {/* Search */}
       {showSearch && (
         <div className="px-4 py-2 border-b border-brd a-fi">
           <input value={searchQ} onChange={(e) => setSearchQ(e.target.value)} placeholder="Search messages..."
@@ -123,7 +143,6 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* Pinned */}
       {showPinned && pinnedMessages.length > 0 && (
         <div className="px-4 py-2 border-b border-brd bg-surface/50 max-h-[200px] overflow-y-auto a-fi">
           <div className="flex items-center justify-between mb-2">
